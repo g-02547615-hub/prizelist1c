@@ -85,6 +85,14 @@ h1 > span:first-of-type { color: var(--green); }
 .roster-heading h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 9px; margin: 6px 0 0; font-size: 20px; font-weight: 800; }
 .roster-heading h2 span { color: #80867e; font-size: 11px; font-weight: 600; }
 .board-total { display: flex; align-items: center; gap: 9px; padding-bottom: 2px; color: #66716a; font-size: 11px; }
+.sync-indicator { display: inline-flex; align-items: center; gap: 5px; color: #6c766d; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.sync-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #9b9e92; }
+.sync-live { color: #23664f; }
+.sync-live .sync-dot { background: #3d9b69; box-shadow: 0 0 0 3px rgba(61, 155, 105, 0.15); }
+.sync-connecting .sync-dot { background: #d59d31; animation: sync-pulse 1.2s ease-in-out infinite; }
+.sync-offline { color: #b64f43; }
+.sync-offline .sync-dot { background: #d45d4c; }
+.sync-local .sync-dot { background: #9b9e92; }
 .board-total strong { color: var(--coral); font-size: 16px; }
 .total-sparkle { display: grid; width: 28px; height: 28px; place-items: center; color: #8b6b20; border-radius: 50%; background: #f4e8bd; }
 .student-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 11px; }
@@ -153,6 +161,7 @@ h1 > span:first-of-type { color: var(--green); }
 .login-copy { margin: 0 0 22px; color: var(--muted); font-size: 12px; }
 .password-label { display: block; margin-bottom: 7px; color: #424b45; font-size: 11px; font-weight: 700; }
 .password-input { width: 100%; height: 42px; padding: 0 11px; color: var(--ink); border: 1px solid #cdd0c5; border-radius: 3px; background: #fffef9; font-size: 16px; letter-spacing: 5px; }
+.email-input { margin-bottom: 14px; letter-spacing: 0; }
 .password-error { margin: 8px 0 0; color: #b44e43; font-size: 11px; }
 .login-submit { display: flex; width: 100%; min-height: 42px; align-items: center; justify-content: space-between; margin-top: 17px; padding: 0 13px; color: #fffdf7; border: 0; border-radius: 3px; background: var(--green); cursor: pointer; font-size: 12px; font-weight: 700; }
 .login-submit:hover { background: #1e4c3b; }
@@ -163,6 +172,7 @@ h1 > span:first-of-type { color: var(--green); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(7px) scale(0.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes sync-pulse { 50% { opacity: 0.45; } }
 
 @media (max-width: 1000px) {
   .student-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }

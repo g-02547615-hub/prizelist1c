@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import confetti from 'canvas-confetti';
+import { supabase } from './lib/supabase.js';
 import {
   Crown,
   Eye,
@@ -99,8 +100,10 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [activeEffectId, setActiveEffectId] = useState(null);
   const [showTeacherLogin, setShowTeacherLogin] = useState(false);
+  const [teacherEmail, setTeacherEmail] = useState('');
   const [teacherPassword, setTeacherPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [syncStatus, setSyncStatus] = useState(supabase ? 'connecting' : 'local');
 
   useEffect(() => {
     try {
@@ -109,6 +112,51 @@ export default function App() {
       // The board still works when browser storage is unavailable.
     }
   }, [students]);
+
+  useEffect(() => {
+    if (!supabase) {
+      setSyncStatus('local');
+      return undefined;
+    }
+
+    let isMounted = true;
+    const loadSharedBoard = async () => {
+      const { data, error } = await supabase
+        .from('class_gift_board')
+        .select('students')
+        .eq('id', 'class-1c')
+        .maybeSingle();
+
+      if (!isMounted) return;
+      if (error) {
+        setSyncStatus('offline');
+        return;
+      }
+      if (Array.isArray(data?.students)) setStudents(data.students);
+      setSyncStatus('live');
+    };
+
+    void loadSharedBoard();
+    const channel = supabase
+      .channel('class-1c-live-board')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'class_gift_board', filter: 'id=eq.class-1c' },
+        (payload) => {
+          if (Array.isArray(payload.new?.students)) setStudents(payload.new.students);
+        },
+      )
+      .subscribe((status) => {
+        if (!isMounted) return;
+        if (status === 'SUBSCRIBED') setSyncStatus('live');
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setSyncStatus('offline');
+      });
+
+    return () => {
+      isMounted = false;
+      void supabase.removeChannel(channel);
+    };
+  }, []);
 
   useEffect(() => {
     if (!showTeacherLogin) return undefined;
@@ -129,8 +177,19 @@ export default function App() {
 
   function closeTeacherLogin() {
     setShowTeacherLogin(false);
+    setTeacherEmail('');
     setTeacherPassword('');
     setPasswordError('');
+  }
+
+  async function saveSharedStudents(nextStudents) {
+    if (!supabase) return;
+    const { error } = await supabase.from('class_gift_board').upsert({
+      id: 'class-1c',
+      students: nextStudents,
+      updated_at: new Date().toISOString(),
+    });
+    setSyncStatus(error ? 'offline' : 'live');
   }
 
   function addGift(id, event) {
@@ -148,26 +207,47 @@ export default function App() {
     if (soundEnabled) playCelebrationSound();
     setActiveEffectId(id);
     window.setTimeout(() => setActiveEffectId(null), 1100);
-    setStudents((previous) => previous.map((student) =>
+    const nextStudents = students.map((student) =>
       student.id === id ? { ...student, gifts: student.gifts + 1 } : student,
-    ));
+    );
+    setStudents(nextStudents);
+    void saveSharedStudents(nextStudents);
   }
 
   function removeGift(id) {
-    setStudents((previous) => previous.map((student) =>
+    const nextStudents = students.map((student) =>
       student.id === id ? { ...student, gifts: Math.max(0, student.gifts - 1) } : student,
-    ));
+    );
+    setStudents(nextStudents);
+    void saveSharedStudents(nextStudents);
   }
 
-  function enterTeacherMode(event) {
+  async function enterTeacherMode(event) {
     event.preventDefault();
-    if (teacherPassword !== '2409') {
-      setPasswordError('密码不正确，请再试一次。');
+    if (!supabase) {
+      setPasswordError('共享实时服务尚未配置。');
+      return;
+    }
+    const { error } = await supabase.auth.signInWithPassword({ email: teacherEmail, password: teacherPassword });
+    if (error) {
+      setPasswordError('登录失败，请检查老师邮箱和密码。');
       return;
     }
     setIsTeacherMode(true);
     closeTeacherLogin();
   }
+
+  async function exitTeacherMode() {
+    if (supabase) await supabase.auth.signOut();
+    setIsTeacherMode(false);
+  }
+
+  const syncLabel = {
+    connecting: '正在连接',
+    live: '实时同步中',
+    offline: '同步连接失败',
+    local: '仅此设备',
+  }[syncStatus];
 
   return (
     <div className="app-shell">
@@ -193,7 +273,7 @@ export default function App() {
             )}
             <button
               className="icon-text-button teacher-access-button"
-              onClick={() => isTeacherMode ? setIsTeacherMode(false) : setShowTeacherLogin(true)}
+              onClick={() => isTeacherMode ? void exitTeacherMode() : setShowTeacherLogin(true)}
             >
               {isTeacherMode ? <Eye size={16} /> : <GraduationCap size={16} />}
               <span>{isTeacherMode ? '学生榜单' : '老师入口'}</span>
@@ -221,6 +301,9 @@ export default function App() {
               <h2>{isTeacherMode ? '给今天的表现点个赞' : '实时排行榜'} <span>{visibleStudents.length} 位同学</span></h2>
             </div>
             <div className="board-total">
+              <span className={`sync-indicator sync-${syncStatus}`} aria-live="polite">
+                <span className="sync-dot" />{syncLabel}
+              </span>
               <span className="total-sparkle"><Sparkles size={16} /></span>
               <span>累计送出 <strong>{totalGifts}</strong> 份礼物</span>
             </div>
@@ -305,15 +388,28 @@ export default function App() {
             <span className="login-icon"><LockKeyhole size={21} /></span>
             <p className="eyebrow">TEACHER ACCESS</p>
             <h2 id="login-title">老师控制台</h2>
-            <p className="login-copy">请输入密码，进入分数管理。</p>
-            <label className="password-label" htmlFor="teacher-password">进入密码</label>
+            <p className="login-copy">使用老师账号登录，管理榜单。</p>
+            <label className="password-label" htmlFor="teacher-email">老师邮箱</label>
+            <input
+              id="teacher-email"
+              className="password-input email-input"
+              type="email"
+              autoComplete="username"
+              value={teacherEmail}
+              onChange={(event) => {
+                setTeacherEmail(event.target.value);
+                setPasswordError('');
+              }}
+              aria-invalid={Boolean(passwordError)}
+              aria-describedby={passwordError ? 'password-error' : undefined}
+              autoFocus
+            />
+            <label className="password-label" htmlFor="teacher-password">密码</label>
             <input
               id="teacher-password"
               className="password-input"
               type="password"
-              inputMode="numeric"
               autoComplete="current-password"
-              maxLength={4}
               value={teacherPassword}
               onChange={(event) => {
                 setTeacherPassword(event.target.value);
